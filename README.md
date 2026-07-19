@@ -25,3 +25,6 @@ stem-splitter.html
 
 
 <img width="1078" height="571" alt="psteam" src="https://github.com/user-attachments/assets/76488292-fee8-47d8-bd5a-58e8d7dd9be5" />
+
+<img width="828" height="1792" alt="bitcoi" src="https://github.com/user-attachments/assets/539f2115-aacb-452b-a1d2-d0cc42a24594" />
+
