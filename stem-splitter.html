@@ -1,0 +1,931 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Stem Splitter — AI Audio Source Separation</title>
+<style>
+:root {
+  --bg: #09090b;
+  --bg-elevated: #131316;
+  --bg-card: #18181c;
+  --border: #2a2a30;
+  --border-strong: #3a3a42;
+  --text: #fafafa;
+  --text-muted: #a0a0aa;
+  --text-dim: #6b6b75;
+  --accent: #a78bfa;
+  --accent-2: #ec4899;
+  --accent-hover: #8b5cf6;
+  --success: #10b981;
+  --error: #ef4444;
+  --warning: #f59e0b;
+  --vocals: #f472b6;
+  --drums: #f59e0b;
+  --bass: #3b82f6;
+  --other: #10b981;
+  --accompaniment: #a78bfa;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; }
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', Roboto, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100vh;
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  background-image:
+    radial-gradient(ellipse 80% 50% at 50% -20%, rgba(167, 139, 250, 0.15), transparent),
+    radial-gradient(ellipse 60% 40% at 80% 100%, rgba(236, 72, 153, 0.08), transparent);
+  background-attachment: fixed;
+}
+
+.app { max-width: 780px; margin: 0 auto; padding: 56px 24px 80px; }
+
+header { text-align: center; margin-bottom: 40px; }
+.logo { display: inline-flex; align-items: center; gap: 12px; margin-bottom: 18px; }
+.logo-icon {
+  width: 40px; height: 40px;
+  background: linear-gradient(135deg, var(--accent), var(--accent-2));
+  border-radius: 10px;
+  display: flex; align-items: center; justify-content: center;
+  box-shadow: 0 8px 24px rgba(167, 139, 250, 0.25);
+}
+h1 {
+  font-size: 2.25rem; font-weight: 700; letter-spacing: -0.025em;
+  background: linear-gradient(135deg, #fff 0%, #a78bfa 50%, #ec4899 100%);
+  -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+.subtitle { color: var(--text-muted); font-size: 1.05rem; max-width: 540px; margin: 0 auto; }
+
+.card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  padding: 28px;
+  margin-bottom: 20px;
+  box-shadow: 0 1px 0 rgba(255,255,255,0.04) inset, 0 20px 60px rgba(0,0,0,0.3);
+}
+
+/* Dropzone */
+.dropzone {
+  display: block;
+  border: 2px dashed var(--border-strong);
+  border-radius: 14px;
+  padding: 56px 24px;
+  text-align: center;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  background: var(--bg-elevated);
+  position: relative;
+  overflow: hidden;
+}
+.dropzone::before {
+  content: ''; position: absolute; inset: 0;
+  background: radial-gradient(circle at 50% 0%, rgba(167,139,250,0.08), transparent 60%);
+  opacity: 0; transition: opacity 0.2s;
+}
+.dropzone:hover, .dropzone.dragover { border-color: var(--accent); transform: translateY(-1px); }
+.dropzone:hover::before, .dropzone.dragover::before { opacity: 1; }
+.dropzone-icon { margin: 0 auto 14px; color: var(--text-muted); display: block; }
+.dropzone:hover .dropzone-icon, .dropzone.dragover .dropzone-icon { color: var(--accent); }
+.dropzone h3 { font-size: 1.125rem; font-weight: 600; margin-bottom: 6px; }
+.dropzone p { color: var(--text-muted); font-size: 0.875rem; }
+
+/* File info */
+.file-info {
+  display: flex; align-items: center; gap: 16px;
+  padding: 16px;
+  background: var(--bg-elevated);
+  border-radius: 12px;
+  border: 1px solid var(--border);
+}
+.file-info-icon {
+  width: 48px; height: 48px;
+  background: linear-gradient(135deg, var(--accent), var(--accent-2));
+  border-radius: 10px;
+  display: flex; align-items: center; justify-content: center;
+  color: white; flex-shrink: 0;
+}
+.file-info-text { flex: 1; min-width: 0; }
+.file-info-name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.95rem; }
+.file-info-meta { color: var(--text-muted); font-size: 0.85rem; margin-top: 2px; }
+
+/* Buttons */
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  padding: 13px 22px; border: none; border-radius: 11px;
+  font-size: 0.95rem; font-weight: 600; cursor: pointer;
+  transition: all 0.15s ease; font-family: inherit; text-decoration: none;
+}
+.btn-primary {
+  background: linear-gradient(135deg, var(--accent), var(--accent-2));
+  color: white; width: 100%;
+  box-shadow: 0 4px 14px rgba(167, 139, 250, 0.3);
+}
+.btn-primary:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 8px 20px rgba(167, 139, 250, 0.4); }
+.btn-primary:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+.btn-secondary { background: var(--bg-elevated); color: var(--text); border: 1px solid var(--border); }
+.btn-secondary:hover { background: var(--border); border-color: var(--border-strong); }
+.btn-small { padding: 8px 14px; font-size: 0.85rem; border-radius: 8px; }
+.btn-stem {
+  background: var(--bg-card); color: var(--text);
+  border: 1px solid var(--border);
+  padding: 9px 14px; font-size: 0.85rem; width: 100%; margin-top: 10px;
+}
+.btn-stem:hover { background: var(--bg-elevated); border-color: var(--accent); color: var(--accent); }
+
+/* Settings */
+.setting { margin-bottom: 22px; }
+.setting-label { display: block; font-weight: 600; margin-bottom: 10px; font-size: 0.9rem; }
+.radio-group { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.radio {
+  display: block; padding: 14px 16px;
+  background: var(--bg-elevated);
+  border: 2px solid var(--border);
+  border-radius: 11px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  position: relative; user-select: none;
+}
+.radio input { position: absolute; opacity: 0; pointer-events: none; }
+.radio:hover { border-color: var(--border-strong); }
+.radio.selected {
+  border-color: var(--accent);
+  background: rgba(167, 139, 250, 0.08);
+  box-shadow: 0 0 0 3px rgba(167, 139, 250, 0.1);
+}
+.radio-title { display: block; font-weight: 600; font-size: 0.9rem; margin-bottom: 2px; }
+.radio-desc { display: block; color: var(--text-muted); font-size: 0.78rem; line-height: 1.4; }
+
+/* Progress */
+.progress-section { text-align: center; }
+.progress-title { font-size: 1.05rem; font-weight: 600; margin-bottom: 4px; }
+.progress-subtitle { color: var(--text-muted); font-size: 0.85rem; margin-bottom: 18px; }
+.progress-bar {
+  height: 8px; background: var(--bg-elevated);
+  border-radius: 999px; overflow: hidden;
+  margin: 16px 0 10px;
+}
+.progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--accent), var(--accent-2));
+  width: 0%;
+  transition: width 0.3s ease;
+  border-radius: 999px;
+  position: relative; overflow: hidden;
+}
+.progress-fill::after {
+  content: ''; position: absolute; inset: 0;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.3), transparent);
+  animation: shimmer 1.5s infinite;
+}
+@keyframes shimmer { 0% { transform: translateX(-100%); } 100% { transform: translateX(100%); } }
+.progress-text { color: var(--text-muted); font-size: 0.85rem; font-variant-numeric: tabular-nums; }
+
+/* Stems */
+.stems-grid { display: grid; gap: 14px; margin-bottom: 22px; }
+.stem {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 13px;
+  padding: 18px;
+  transition: border-color 0.2s;
+}
+.stem:hover { border-color: var(--border-strong); }
+.stem-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+.stem-name { font-weight: 600; font-size: 1rem; display: flex; align-items: center; gap: 10px; }
+.stem-dot { width: 11px; height: 11px; border-radius: 50%; box-shadow: 0 0 12px currentColor; }
+.stem-duration { color: var(--text-muted); font-size: 0.8rem; font-variant-numeric: tabular-nums; }
+.stem-waveform { width: 100%; height: 64px; background: var(--bg-card); border-radius: 8px; margin-bottom: 12px; display: block; }
+.stem audio { width: 100%; height: 36px; border-radius: 8px; margin-bottom: 4px; }
+.stem audio::-webkit-media-controls-panel { background: var(--bg-card); }
+
+.error {
+  color: var(--error); font-size: 0.9rem;
+  margin-top: 14px; padding: 12px 14px;
+  background: rgba(239, 68, 68, 0.08);
+  border-radius: 10px;
+  border: 1px solid rgba(239, 68, 68, 0.25);
+}
+.error strong { display: block; margin-bottom: 2px; }
+.notice {
+  color: var(--warning); font-size: 0.85rem;
+  margin-top: 12px; padding: 10px 12px;
+  background: rgba(245, 158, 11, 0.06);
+  border-radius: 8px;
+  border: 1px solid rgba(245, 158, 11, 0.2);
+}
+
+footer { text-align: center; color: var(--text-dim); font-size: 0.85rem; margin-top: 36px; line-height: 1.6; }
+footer a { color: var(--text-muted); text-decoration: none; border-bottom: 1px dotted var(--text-dim); }
+footer a:hover { color: var(--accent); }
+
+[hidden] { display: none !important; }
+
+@media (max-width: 600px) {
+  .app { padding: 32px 16px 64px; }
+  h1 { font-size: 1.75rem; }
+  .card { padding: 20px; }
+  .radio-group { grid-template-columns: 1fr; }
+  .dropzone { padding: 40px 16px; }
+}
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <div class="logo">
+      <div class="logo-icon">
+        <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M9 18V5l12-2v13"/>
+          <circle cx="6" cy="18" r="3"/>
+          <circle cx="18" cy="16" r="3"/>
+        </svg>
+      </div>
+    </div>
+    <h1>Stem Splitter</h1>
+    <p class="subtitle">Separate vocals, drums, bass, and other instruments from any song — runs entirely in your browser using AI.</p>
+  </header>
+
+  <!-- Step 1: Upload -->
+  <div class="card" id="uploadCard">
+    <label class="dropzone" id="dropzone">
+      <input type="file" id="fileInput" accept="audio/*,.mp3,.wav,.m4a,.ogg,.flac,.aac" hidden>
+      <svg class="dropzone-icon" viewBox="0 0 24 24" width="40" height="40" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+        <polyline points="17 8 12 3 7 8"/>
+        <line x1="12" y1="3" x2="12" y2="15"/>
+      </svg>
+      <h3>Drop audio file here</h3>
+      <p>or click to browse · MP3, WAV, M4A, OGG, FLAC</p>
+    </label>
+    <div class="error" id="uploadError" hidden></div>
+  </div>
+
+  <!-- Step 2: Settings -->
+  <div class="card" id="settingsCard" hidden>
+    <div class="file-info">
+      <div class="file-info-icon">
+        <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M9 18V5l12-2v13"/>
+          <circle cx="6" cy="18" r="3"/>
+          <circle cx="18" cy="16" r="3"/>
+        </svg>
+      </div>
+      <div class="file-info-text">
+        <div class="file-info-name" id="fileName">audio.mp3</div>
+        <div class="file-info-meta" id="fileMeta">3:42 · 44.1kHz · Stereo</div>
+      </div>
+      <button class="btn btn-secondary btn-small" id="changeFileBtn">Change</button>
+    </div>
+
+    <div style="height: 1px; background: var(--border); margin: 24px 0;"></div>
+
+    <div class="setting">
+      <label class="setting-label">Engine</label>
+      <div class="radio-group">
+        <label class="radio selected" data-group="engine" data-value="ai">
+          <input type="radio" name="engine" value="ai" checked>
+          <span class="radio-title">🤖 AI · HTDemucs</span>
+          <span class="radio-desc">4 stems, ~170MB model (one-time), best quality</span>
+        </label>
+        <label class="radio" data-group="engine" data-value="quick">
+          <input type="radio" name="engine" value="quick">
+          <span class="radio-title">⚡ Quick · DSP</span>
+          <span class="radio-desc">2 stems, instant, mid/side method</span>
+        </label>
+      </div>
+    </div>
+
+    <div class="setting" id="outputSetting" hidden>
+      <label class="setting-label">Output</label>
+      <div class="radio-group">
+        <label class="radio selected" data-group="combine" data-value="all">
+          <input type="radio" name="combine" value="all" checked>
+          <span class="radio-title">All 4 stems</span>
+          <span class="radio-desc">Vocals · Drums · Bass · Other</span>
+        </label>
+        <label class="radio" data-group="combine" data-value="vocals">
+          <input type="radio" name="combine" value="vocals">
+          <span class="radio-title">Vocals + Instrumental</span>
+          <span class="radio-desc">Karaoke-style: vocals + (drums+bass+other)</span>
+        </label>
+      </div>
+    </div>
+
+    <button class="btn btn-primary" id="processBtn">
+      <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <polygon points="5 3 19 12 5 21 5 3"/>
+      </svg>
+      Separate Stems
+    </button>
+    <div class="error" id="settingsError" hidden></div>
+  </div>
+
+  <!-- Step 3: Progress -->
+  <div class="card" id="progressCard" hidden>
+    <div class="progress-section">
+      <div class="progress-title" id="progressTitle">Loading model…</div>
+      <div class="progress-subtitle" id="progressSubtitle">First run downloads the AI model (~170MB). Cached for next time.</div>
+      <div class="progress-bar">
+        <div class="progress-fill" id="progressFill"></div>
+      </div>
+      <div class="progress-text" id="progressText">0%</div>
+    </div>
+  </div>
+
+  <!-- Step 4: Results -->
+  <div class="card" id="resultsCard" hidden>
+    <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom: 8px; gap: 8px; flex-wrap: wrap;">
+      <h2 style="font-size: 1.25rem; font-weight: 700;">Your Stems</h2>
+      <button class="btn btn-secondary btn-small" id="downloadAllBtn">Download all</button>
+    </div>
+    <p style="color: var(--text-muted); font-size: 0.9rem; margin-bottom: 18px;">Click play to preview, or download each stem as MP3.</p>
+    <div class="stems-grid" id="stemsGrid"></div>
+    <button class="btn btn-secondary" id="resetBtn" style="width: 100%;">Process Another File</button>
+  </div>
+
+  <footer>
+    <p>Runs entirely in your browser. Audio never leaves your device.</p>
+    <p style="margin-top: 4px;">Powered by <a href="https://github.com/timcsy/demucs-web" target="_blank" rel="noopener">demucs-web</a> &amp; <a href="https://github.com/zhuker/lamejs" target="_blank" rel="noopener">lamejs</a></p>
+  </footer>
+</div>
+
+<!-- MP3 encoder -->
+<script src="https://cdn.jsdelivr.net/npm/lamejs@1.2.1/lame.min.js"></script>
+
+<!-- Main app: load ONNX Runtime Web + demucs-web as ES modules -->
+<script type="module">
+import * as ort from 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.27.0/dist/ort.min.mjs';
+import { DemucsProcessor, CONSTANTS } from 'https://esm.sh/demucs-web@1.0.2';
+
+// Configure ONNX Runtime:
+// - Avoid SharedArrayBuffer requirement so the app works from file:// or any HTTP server
+// - Try WebGPU first (much faster), fall back to WASM
+const hasSharedArrayBuffer = typeof SharedArrayBuffer !== 'undefined';
+if (hasSharedArrayBuffer) {
+  ort.env.wasm.numThreads = Math.min(navigator.hardwareConcurrency || 4, 4);
+} else {
+  ort.env.wasm.numThreads = 1;
+}
+ort.env.wasm.simd = true;
+
+let usingWebGPU = false;
+try {
+  if ('gpu' in navigator) {
+    const adapter = await navigator.gpu.requestAdapter();
+    if (adapter) {
+      usingWebGPU = true;
+    }
+  }
+} catch { /* WebGPU not available */ }
+
+// ============ State ============
+let audioFile = null;
+let audioBuffer = null;
+let stems = {};   // { name: AudioBuffer }
+const stemColors = {
+  vocals: '#f472b6',
+  accompaniment: '#a78bfa',
+  drums: '#f59e0b',
+  bass: '#3b82f6',
+  other: '#10b981',
+};
+const stemLabels = {
+  vocals: 'Vocals',
+  accompaniment: 'Accompaniment',
+  drums: 'Drums',
+  bass: 'Bass',
+  other: 'Other',
+};
+
+// ============ DOM ============
+const $ = (id) => document.getElementById(id);
+const fileInput = $('fileInput');
+const dropzone = $('dropzone');
+const uploadCard = $('uploadCard');
+const settingsCard = $('settingsCard');
+const progressCard = $('progressCard');
+const resultsCard = $('resultsCard');
+const fileName = $('fileName');
+const fileMeta = $('fileMeta');
+const processBtn = $('processBtn');
+const resetBtn = $('resetBtn');
+const changeFileBtn = $('changeFileBtn');
+const progressFill = $('progressFill');
+const progressText = $('progressText');
+const progressTitle = $('progressTitle');
+const progressSubtitle = $('progressSubtitle');
+const stemsGrid = $('stemsGrid');
+const downloadAllBtn = $('downloadAllBtn');
+const outputSetting = $('outputSetting');
+
+// ============ Helpers ============
+function formatDuration(seconds) {
+  const m = Math.floor(seconds / 60);
+  const s = Math.floor(seconds % 60);
+  return `${m}:${s.toString().padStart(2, '0')}`;
+}
+
+function showError(elId, message, title = 'Something went wrong') {
+  const el = $(elId);
+  el.innerHTML = `<strong>${title}</strong>${message}`;
+  el.hidden = false;
+}
+function hideError(elId) { $(elId).hidden = true; }
+
+function updateProgress(percent, text, title) {
+  progressFill.style.width = Math.min(100, Math.max(0, percent)) + '%';
+  if (text !== undefined) progressText.textContent = text;
+  if (title !== undefined) progressTitle.textContent = title;
+}
+
+function setProgressStage(title, subtitle) {
+  progressTitle.textContent = title;
+  if (subtitle !== undefined) progressSubtitle.textContent = subtitle;
+}
+
+function getRadioValue(name) {
+  const el = document.querySelector(`input[name="${name}"]:checked`);
+  return el ? el.value : null;
+}
+
+// ============ File handling ============
+function preventDefaults(e) { e.preventDefault(); e.stopPropagation(); }
+['dragenter', 'dragover', 'dragleave', 'drop'].forEach(evt => dropzone.addEventListener(evt, preventDefaults));
+['dragenter', 'dragover'].forEach(evt => dropzone.addEventListener(evt, () => dropzone.classList.add('dragover')));
+['dragleave', 'drop'].forEach(evt => dropzone.addEventListener(evt, () => dropzone.classList.remove('dragover')));
+
+dropzone.addEventListener('drop', (e) => {
+  const file = e.dataTransfer.files[0];
+  if (file) handleFile(file);
+});
+fileInput.addEventListener('change', (e) => {
+  const file = e.target.files[0];
+  if (file) handleFile(file);
+});
+changeFileBtn.addEventListener('click', () => fileInput.click());
+resetBtn.addEventListener('click', () => reset());
+downloadAllBtn.addEventListener('click', () => downloadAll());
+
+// Radio button styling
+document.querySelectorAll('.radio').forEach(radio => {
+  radio.addEventListener('click', (e) => {
+    const input = radio.querySelector('input');
+    if (e.target.tagName !== 'INPUT') input.checked = true;
+    const group = radio.dataset.group;
+    document.querySelectorAll(`.radio[data-group="${group}"]`).forEach(r => r.classList.remove('selected'));
+    radio.classList.add('selected');
+    // Show/hide output setting for AI engine
+    if (group === 'engine') {
+      outputSetting.hidden = (radio.dataset.value !== 'ai');
+    }
+  });
+});
+
+processBtn.addEventListener('click', () => {
+  processStems().catch(err => {
+    console.error(err);
+    showError('settingsError', err.message || String(err));
+    progressCard.hidden = true;
+    settingsCard.hidden = false;
+  });
+});
+
+async function handleFile(file) {
+  hideError('uploadError');
+  if (!file.type.startsWith('audio/') && !/\.(mp3|wav|m4a|ogg|flac|aac)$/i.test(file.name)) {
+    showError('uploadError', 'Please select an audio file (MP3, WAV, M4A, OGG, FLAC).');
+    return;
+  }
+  audioFile = file;
+  try {
+    const arrayBuffer = await file.arrayBuffer();
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    audioBuffer = await ctx.decodeAudioData(arrayBuffer);
+    ctx.close();
+  } catch (e) {
+    showError('uploadError', 'Could not decode this audio file. Try a different format (MP3 or WAV recommended).');
+    return;
+  }
+  fileName.textContent = file.name;
+  fileMeta.textContent = `${formatDuration(audioBuffer.duration)} · ${audioBuffer.sampleRate} Hz · ${audioBuffer.numberOfChannels === 1 ? 'Mono' : 'Stereo'}`;
+  uploadCard.hidden = true;
+  settingsCard.hidden = false;
+  resultsCard.hidden = true;
+  progressCard.hidden = true;
+}
+
+function reset() {
+  audioFile = null;
+  audioBuffer = null;
+  stems = {};
+  fileInput.value = '';
+  uploadCard.hidden = false;
+  settingsCard.hidden = true;
+  progressCard.hidden = true;
+  resultsCard.hidden = true;
+  hideError('settingsError');
+  hideError('uploadError');
+}
+
+// ============ Audio utilities ============
+async function resampleTo(audioBuffer, targetRate) {
+  if (audioBuffer.sampleRate === targetRate && audioBuffer.numberOfChannels === 2) return audioBuffer;
+  const length = Math.ceil((audioBuffer.duration || audioBuffer.length / audioBuffer.sampleRate) * targetRate);
+  const offline = new OfflineAudioContext(2, Math.max(1, length), targetRate);
+  // If mono, duplicate to stereo for the resampler
+  let src = audioBuffer;
+  if (audioBuffer.numberOfChannels === 1) {
+    const stereo = new AudioBuffer({ length: audioBuffer.length, sampleRate: audioBuffer.sampleRate, numberOfChannels: 2 });
+    const m = audioBuffer.getChannelData(0);
+    stereo.copyToChannel(m, 0);
+    stereo.copyToChannel(m, 1);
+    src = stereo;
+  }
+  const source = offline.createBufferSource();
+  source.buffer = src;
+  source.connect(offline.destination);
+  source.start(0);
+  return await offline.startRendering();
+}
+
+function makeStereoBuffer(left, right, sampleRate) {
+  const len = left.length;
+  const buf = new AudioBuffer({ length: len, sampleRate, numberOfChannels: 2 });
+  buf.copyToChannel(left, 0);
+  buf.copyToChannel(right, 1);
+  return buf;
+}
+
+// ============ MP3 encoding (lamejs) ============
+function audioBufferToMp3(audioBuffer, bitrate = 192) {
+  const numCh = audioBuffer.numberOfChannels;
+  const sampleRate = audioBuffer.sampleRate;
+  const samples = audioBuffer.length;
+  const encoder = new lamejs.Mp3Encoder(numCh, sampleRate, bitrate);
+
+  const left = float32ToInt16(audioBuffer.getChannelData(0));
+  const right = numCh > 1 ? float32ToInt16(audioBuffer.getChannelData(1)) : null;
+
+  const blockSize = 1152;
+  const data = [];
+
+  for (let i = 0; i < samples; i += blockSize) {
+    const leftChunk = left.subarray(i, Math.min(i + blockSize, samples));
+    let mp3buf;
+    if (numCh === 1) {
+      mp3buf = encoder.encodeBuffer(leftChunk);
+    } else {
+      const rightChunk = right.subarray(i, Math.min(i + blockSize, samples));
+      mp3buf = encoder.encodeBuffer(leftChunk, rightChunk);
+    }
+    if (mp3buf.length > 0) data.push(mp3buf);
+  }
+  const tail = encoder.flush();
+  if (tail.length > 0) data.push(tail);
+  return new Blob(data, { type: 'audio/mpeg' });
+}
+
+function float32ToInt16(f32) {
+  const i16 = new Int16Array(f32.length);
+  for (let i = 0; i < f32.length; i++) {
+    let s = Math.max(-1, Math.min(1, f32[i]));
+    i16[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+  }
+  return i16;
+}
+
+function audioBufferToWav(audioBuffer) {
+  const numCh = audioBuffer.numberOfChannels;
+  const sampleRate = audioBuffer.sampleRate;
+  const samples = audioBuffer.length;
+  const bytesPerSample = 2;
+  const blockAlign = numCh * bytesPerSample;
+  const byteRate = sampleRate * blockAlign;
+  const dataSize = samples * blockAlign;
+  const buffer = new ArrayBuffer(44 + dataSize);
+  const view = new DataView(buffer);
+  const writeString = (offset, s) => { for (let i = 0; i < s.length; i++) view.setUint8(offset + i, s.charCodeAt(i)); };
+  writeString(0, 'RIFF');
+  view.setUint32(4, 36 + dataSize, true);
+  writeString(8, 'WAVE');
+  writeString(12, 'fmt ');
+  view.setUint32(16, 16, true);
+  view.setUint16(20, 1, true);
+  view.setUint16(22, numCh, true);
+  view.setUint32(24, sampleRate, true);
+  view.setUint32(28, byteRate, true);
+  view.setUint16(32, blockAlign, true);
+  view.setUint16(34, 16, true);
+  writeString(36, 'data');
+  view.setUint32(40, dataSize, true);
+  let offset = 44;
+  const channels = [];
+  for (let c = 0; c < numCh; c++) channels.push(audioBuffer.getChannelData(c));
+  for (let i = 0; i < samples; i++) {
+    for (let c = 0; c < numCh; c++) {
+      let s = Math.max(-1, Math.min(1, channels[c][i]));
+      view.setInt16(offset, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
+      offset += 2;
+    }
+  }
+  return new Blob([buffer], { type: 'audio/wav' });
+}
+
+function downloadBlob(blob, filename) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 1500);
+}
+
+// ============ Waveform rendering ============
+function drawWaveform(canvas, audioBuffer, color) {
+  const dpr = window.devicePixelRatio || 1;
+  const cssW = canvas.clientWidth;
+  const cssH = canvas.clientHeight;
+  if (cssW === 0 || cssH === 0) return;
+  canvas.width = cssW * dpr;
+  canvas.height = cssH * dpr;
+  const ctx = canvas.getContext('2d');
+  ctx.scale(dpr, dpr);
+  ctx.clearRect(0, 0, cssW, cssH);
+
+  let data;
+  if (audioBuffer.numberOfChannels >= 2) {
+    const l = audioBuffer.getChannelData(0);
+    const r = audioBuffer.getChannelData(1);
+    data = new Float32Array(l.length);
+    for (let i = 0; i < l.length; i++) data[i] = (l[i] + r[i]) / 2;
+  } else {
+    data = audioBuffer.getChannelData(0);
+  }
+
+  const samples = data.length;
+  const samplesPerPx = Math.max(1, Math.floor(samples / cssW));
+  const midY = cssH / 2;
+  const amp = cssH / 2 - 2;
+
+  ctx.strokeStyle = 'rgba(255,255,255,0.04)';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(0, midY);
+  ctx.lineTo(cssW, midY);
+  ctx.stroke();
+
+  ctx.fillStyle = color;
+  for (let x = 0; x < cssW; x++) {
+    let min = 1, max = -1;
+    const start = x * samplesPerPx;
+    const end = Math.min(samples, start + samplesPerPx);
+    for (let i = start; i < end; i++) {
+      const v = data[i];
+      if (v < min) min = v;
+      if (v > max) max = v;
+    }
+    const y1 = midY - max * amp;
+    const y2 = midY - min * amp;
+    ctx.fillRect(x, y1, 1, Math.max(1, y2 - y1));
+  }
+}
+
+// ============ Process orchestration ============
+let demucsProcessor = null;
+let modelLoaded = false;
+
+async function processStems() {
+  const engine = getRadioValue('engine');
+  const combine = getRadioValue('combine') || 'all';
+  hideError('settingsError');
+
+  if (engine === 'quick' && audioBuffer.numberOfChannels < 2) {
+    showError('settingsError', 'Quick mode needs a stereo file. Use the AI engine for mono input.');
+    return;
+  }
+
+  settingsCard.hidden = true;
+  progressCard.hidden = false;
+  resultsCard.hidden = true;
+  updateProgress(0, 'Starting…', 'Preparing…');
+
+  try {
+    if (engine === 'quick') {
+      await runQuick();
+    } else {
+      await runAI(combine);
+    }
+    showResults();
+  } catch (e) {
+    progressCard.hidden = true;
+    settingsCard.hidden = false;
+    throw e;
+  }
+}
+
+// ---- Quick DSP mode (mid/side) ----
+async function runQuick() {
+  setProgressStage('Separating with DSP…', 'Using mid/side processing (no model download).');
+  updateProgress(30);
+  await sleep(50);
+
+  const left = audioBuffer.getChannelData(0);
+  const right = audioBuffer.getChannelData(1);
+  const len = left.length;
+  const sr = audioBuffer.sampleRate;
+
+  // Vocals ≈ side (L-R), Accompaniment ≈ mid (L+R)
+  const vocals = new Float32Array(len);
+  const acc = new Float32Array(len);
+  for (let i = 0; i < len; i++) {
+    const mid = (left[i] + right[i]) / 2;
+    const side = (left[i] - right[i]) / 2;
+    vocals[i] = side;
+    acc[i] = mid;
+  }
+  updateProgress(80);
+  stems.vocals = makeStereoBuffer(vocals, vocals.slice(), sr);
+  stems.accompaniment = makeStereoBuffer(acc, acc.slice(), sr);
+  updateProgress(100, 'Done', 'Complete');
+}
+
+// ---- AI mode (HTDemucs via demucs-web) ----
+async function runAI(combine) {
+  setProgressStage('Loading AI model…', 'Downloading HTDemucs (~170MB) on first run. Cached afterwards.');
+  updateProgress(2, 'Initializing…');
+
+  // Reuse processor if already created
+  if (!demucsProcessor) {
+    const sessionOptions = {
+      graphOptimizationLevel: 'all',
+    };
+    if (usingWebGPU) {
+      // WebGPU is much faster. If a kernel isn't supported, ORT falls back to WASM automatically.
+      sessionOptions.executionProviders = ['webgpu', 'wasm'];
+    } else {
+      sessionOptions.executionProviders = ['wasm'];
+    }
+    demucsProcessor = new DemucsProcessor({
+      ort,
+      sessionOptions,
+      onProgress: (data) => {
+        // data can be { progress, currentSegment, totalSegments } or a number
+        if (typeof data === 'number') {
+          updateProgress(10 + data * 80, `${(data * 100).toFixed(1)}%`, 'Separating audio…');
+        } else if (data && typeof data.progress === 'number') {
+          updateProgress(
+            10 + data.progress * 80,
+            `Segment ${data.currentSegment || '?'} / ${data.totalSegments || '?'} · ${(data.progress * 100).toFixed(1)}%`,
+            'Separating audio…'
+          );
+        }
+      },
+      onLog: (phase, msg) => {
+        if (phase === 'download' || phase === 'init' || phase === 'error') {
+          setProgressStage(msg || phase, phase === 'error' ? 'Model load failed' : 'Loading model…');
+        }
+      },
+      onDownloadProgress: (loaded, total) => {
+        if (total > 0) {
+          const pct = (loaded / total) * 100;
+          const mb = (loaded / 1024 / 1024).toFixed(1);
+          const totalMb = (total / 1024 / 1024).toFixed(1);
+          updateProgress(pct * 0.08, `${mb} / ${totalMb} MB · ${pct.toFixed(1)}%`, 'Downloading model…');
+        }
+      },
+    });
+  }
+
+  if (!modelLoaded) {
+    try {
+      await demucsProcessor.loadModel(CONSTANTS.DEFAULT_MODEL_URL);
+      modelLoaded = true;
+    } catch (e) {
+      throw new Error('Could not load the AI model. Check your network and try again. (' + (e.message || e) + ')');
+    }
+  }
+  setProgressStage('Preparing audio…', 'Resampling to 44.1 kHz stereo.');
+  updateProgress(10, 'Resampling…');
+  const stereo44 = await resampleTo(audioBuffer, 44100);
+  const left = stereo44.getChannelData(0);
+  const right = stereo44.getChannelData(1);
+
+  setProgressStage('Running AI separation…', 'This may take a few minutes for a full song.');
+  updateProgress(12, 'Starting inference…');
+
+  const result = await demucsProcessor.separate(left, right);
+  // result: { drums, bass, other, vocals } each { left, right } Float32Array @ 44.1kHz
+  if (!result || !result.vocals) {
+    throw new Error('Model produced no output.');
+  }
+
+  setProgressStage('Building stems…', 'Encoding to playable buffers.');
+  updateProgress(94, 'Finalizing…');
+
+  const sr = 44100;
+  stems = {};
+  if (combine === 'vocals') {
+    // Vocals + (drums + bass + other) = instrumental
+    const vL = result.vocals.left, vR = result.vocals.right;
+    const iL = new Float32Array(vL.length);
+    const iR = new Float32Array(vL.length);
+    for (let i = 0; i < vL.length; i++) {
+      iL[i] = (result.drums.left[i] || 0) + (result.bass.left[i] || 0) + (result.other.left[i] || 0);
+      iR[i] = (result.drums.right[i] || 0) + (result.bass.right[i] || 0) + (result.other.right[i] || 0);
+    }
+    stems.vocals = makeStereoBuffer(vL, vR, sr);
+    stems.accompaniment = makeStereoBuffer(iL, iR, sr);
+  } else {
+    stems.vocals = makeStereoBuffer(result.vocals.left, result.vocals.right, sr);
+    stems.drums = makeStereoBuffer(result.drums.left, result.drums.right, sr);
+    stems.bass = makeStereoBuffer(result.bass.left, result.bass.right, sr);
+    stems.other = makeStereoBuffer(result.other.left, result.other.right, sr);
+  }
+
+  // Resample back to original sample rate (so the player matches the input)
+  const outRate = audioBuffer.sampleRate;
+  if (outRate !== sr) {
+    for (const k of Object.keys(stems)) {
+      stems[k] = await resampleTo(stems[k], outRate);
+    }
+  }
+  updateProgress(100, 'Done', 'Complete');
+}
+
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+// ============ Results UI ============
+function showResults() {
+  progressCard.hidden = true;
+  resultsCard.hidden = false;
+  stemsGrid.innerHTML = '';
+  const baseName = (audioFile.name || 'audio').replace(/\.[^.]+$/, '');
+
+  const order = ['vocals', 'drums', 'bass', 'other', 'accompaniment'];
+  const keys = order.filter(k => stems[k]).concat(Object.keys(stems).filter(k => !order.includes(k)));
+
+  for (const key of keys) {
+    const buf = stems[key];
+    if (!buf) continue;
+    const color = stemColors[key] || '#a78bfa';
+    const label = stemLabels[key] || (key.charAt(0).toUpperCase() + key.slice(1));
+
+    const wrap = document.createElement('div');
+    wrap.className = 'stem';
+
+    const header = document.createElement('div');
+    header.className = 'stem-header';
+    header.innerHTML = `
+      <div class="stem-name">
+        <span class="stem-dot" style="background:${color}; color:${color}"></span>
+        ${label}
+      </div>
+      <span class="stem-duration">${formatDuration(buf.duration)}</span>
+    `;
+    wrap.appendChild(header);
+
+    const wave = document.createElement('canvas');
+    wave.className = 'stem-waveform';
+    wrap.appendChild(wave);
+    requestAnimationFrame(() => drawWaveform(wave, buf, color));
+
+    const audio = document.createElement('audio');
+    audio.controls = true;
+    audio.src = URL.createObjectURL(audioBufferToWav(buf));
+    wrap.appendChild(audio);
+
+    const dl = document.createElement('button');
+    dl.className = 'btn btn-stem';
+    dl.innerHTML = `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg> Download ${label}.mp3`;
+    dl.addEventListener('click', () => {
+      const mp3 = audioBufferToMp3(buf, 192);
+      downloadBlob(mp3, `${baseName}_${key}.mp3`);
+    });
+    wrap.appendChild(dl);
+
+    stemsGrid.appendChild(wrap);
+  }
+}
+
+async function downloadAll() {
+  const baseName = (audioFile.name || 'audio').replace(/\.[^.]+$/, '');
+  for (const key of Object.keys(stems)) {
+    const buf = stems[key];
+    const mp3 = audioBufferToMp3(buf, 192);
+    downloadBlob(mp3, `${baseName}_${key}.mp3`);
+    await sleep(450);
+  }
+}
+</script>
+</body>
+</html>
