@@ -9,7 +9,7 @@ paid version with donation more features - just email me and donate to R&D
 
 redonenja@gmail.com bitcoin-bc1qcg28ce2pst8yzw9ryw65vje7gs5ew7dcwel943
 
-free versions
+free versions games
 
 brickbreaker (good).html
 
@@ -20,6 +20,8 @@ stem-splitter.html
 starfield (4).html
 
 stick2b2.html
+
+
 <img width="866" height="640" alt="pbrick" src="https://github.com/user-attachments/assets/480066ba-b335-4694-ab46-e9a5df7dae38" />
 
 
