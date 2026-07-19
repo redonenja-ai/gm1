@@ -1,6 +1,6 @@
 # gm1
 
-here are a few apss i made
+here are a few apps i made
 
 
 
