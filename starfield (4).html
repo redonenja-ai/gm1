@@ -1,0 +1,640 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Starfield Simulation</title>
+    <style>
+        html, body {
+            height: 100%;
+            margin: 0;
+            background: #000;
+            overflow: hidden;
+        }
+
+        canvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+        }
+
+        .hint {
+            position: fixed;
+            left: 12px;
+            bottom: 12px;
+            color: #cfe8ff;
+            font-family: system-ui, -apple-system, sans-serif;
+            font-size: 12px;
+            opacity: 0.8;
+            pointer-events: none;
+            user-select: none;
+            line-height: 1.55;
+        }
+
+        .hint kbd {
+            display: inline-block;
+            padding: 0 5px;
+            border: 1px solid rgba(207, 232, 255, 0.35);
+            border-radius: 3px;
+            font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+            font-size: 11px;
+            background: rgba(207, 232, 255, 0.06);
+        }
+
+        .corner {
+            position: fixed;
+            color: #cfe8ff;
+            font-family: system-ui, -apple-system, sans-serif;
+            font-size: 12px;
+            opacity: 0.85;
+            pointer-events: none;
+            user-select: none;
+            line-height: 1.55;
+        }
+
+        .corner.tl { left: 12px; top: 12px; }
+        .corner.tr { right: 12px; top: 12px; text-align: right; }
+        .corner.br { right: 12px; bottom: 12px; text-align: right; }
+
+        .chip {
+            display: inline-block;
+            margin-top: 4px;
+            padding: 2px 8px;
+            border: 1px solid rgba(207, 232, 255, 0.35);
+            border-radius: 3px;
+            background: rgba(207, 232, 255, 0.06);
+            transition: opacity 0.6s ease;
+        }
+
+        .chip.flash {
+            animation: flash 0.45s ease;
+        }
+
+        @keyframes flash {
+            0%   { background: rgba(207, 232, 255, 0.45); color: #fff; }
+            100% { background: rgba(207, 232, 255, 0.06); color: #cfe8ff; }
+        }
+
+        .boost {
+            position: fixed;
+            left: 50%;
+            top: 18px;
+            transform: translateX(-50%);
+            padding: 4px 14px;
+            color: #cfe8ff;
+            font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+            font-size: 11px;
+            letter-spacing: 2px;
+            border: 1px solid rgba(207, 232, 255, 0.35);
+            border-radius: 3px;
+            background: rgba(207, 232, 255, 0.04);
+            opacity: 0;
+            pointer-events: none;
+            user-select: none;
+            transition: opacity 0.25s ease;
+        }
+
+        .boost.on { opacity: 0.95; }
+    </style>
+</head>
+<body>
+    <canvas id="c"></canvas>
+
+    <div class="hint">
+        Move mouse or touch to steer<br>
+        Hold <kbd>click</kbd> / <kbd>touch</kbd> / <kbd>Space</kbd> to boost<br>
+        <kbd>Enter</kbd> next palette &middot; <kbd>M</kbd> switch mode
+    </div>
+
+    <div class="corner tr">
+        Mode
+        <div><span class="chip" id="modeName">Forward</span></div>
+    </div>
+
+    <div class="corner br">
+        Palette
+        <div><span class="chip" id="paletteName">Blue Field</span></div>
+    </div>
+
+    <div class="boost" id="boost">WARP</div>
+
+    <script>
+        (() => {
+            const canvas = document.getElementById('c');
+            const ctx = canvas.getContext('2d', { alpha: false });
+            const paletteNameEl = document.getElementById('paletteName');
+            const modeNameEl = document.getElementById('modeName');
+            const boostEl = document.getElementById('boost');
+
+            // Settings
+            const STAR_COUNT = 600;
+            const DISTANT_COUNT = 10;
+            const DEPTH = 1200;
+            const BASE_SPEED = 6;
+            const BOOST_MAX = 3.5;
+            const DISTANT_BOOST_MAX = 6;
+            const TUNNEL_BOOST_MAX = 5;
+            const BOOST_FADE = 0.12;
+            const TWINKLE = 0.02;
+            const TRAIL_ALPHA = 0.18;
+            const FOCAL = 600;
+
+            // Cylindrical hex tunnel settings
+            const TUNNEL_R = 280;                 // tunnel radius in world units
+            const TUNNEL_HEX_AROUND = 20;         // hexes around the tunnel
+            const TUNNEL_HEX_ROWS = 80;           // rows along the tunnel
+            const TUNNEL_HEX_ROW_SPACING = 80;    // z spacing between rows
+            const TUNNEL_HEX_SIZE = 40;           // hex "radius" in (z, arc-length) world units
+            const TUNNEL_WRAP = TUNNEL_HEX_ROWS * TUNNEL_HEX_ROW_SPACING;
+            const TUNNEL_Z_CULL = 5500;           // skip hexes farther than this
+            const SQRT3 = Math.sqrt(3);
+            const TUNNEL_DTHETA = TUNNEL_HEX_SIZE * SQRT3 / 2 / TUNNEL_R;
+            const TUNNEL_COS_DT = Math.cos(TUNNEL_DTHETA);
+            const TUNNEL_SIN_DT = Math.sin(TUNNEL_DTHETA);
+
+            // Color palettes
+            const PALETTES = [
+                { name: 'Blue Field', hueMin: 200, hueMax: 260, sat: 90 },
+                { name: 'Sunset',     hueMin: 0,   hueMax: 45,  sat: 95 },
+                { name: 'Aurora',     hueMin: 90,  hueMax: 170, sat: 85 },
+                { name: 'Nebula',     hueMin: 270, hueMax: 330, sat: 90 },
+                { name: 'Rainbow',    hueMin: 0,   hueMax: 360, sat: 90 },
+                { name: 'Inferno',    hueMin: 340, hueMax: 30,  sat: 100 },
+                { name: 'Mono White', hueMin: 0,   hueMax: 1,   sat: 0 }
+            ];
+
+            const MODES = [
+                { key: 'forward', label: 'Forward',    speedMul: 1.0, boostMax: BOOST_MAX,        motion: 'z' },
+                { key: 'pov',     label: 'Side View',  speedMul: 1.0, boostMax: BOOST_MAX,        motion: 'x' },
+                { key: 'distant', label: 'Distant',    speedMul: 0.2, boostMax: DISTANT_BOOST_MAX, motion: 'z' },
+                { key: 'tunnel',  label: 'Hex Tunnel', speedMul: 0.7, boostMax: TUNNEL_BOOST_MAX,  motion: 'tunnel' }
+            ];
+
+            let paletteIndex = 0;
+            let modeIndex = 0;
+            let worldX = 0;
+
+            // Device pixel scaling
+            let DPR = Math.max(1, window.devicePixelRatio || 1);
+            let W = 0, H = 0, CX = 0, CY = 0;
+
+            const pointer = { x: 0, y: 0, tx: 0, ty: 0 };
+            let boost = 0;
+            let boostTarget = 0;
+
+            let stars = [];        // for star modes (forward, pov, distant)
+            let tunnelHexes = [];  // for tunnel mode (one continuous hex grid on a cylinder)
+
+            function resize() {
+                DPR = Math.max(1, window.devicePixelRatio || 1);
+                W = Math.floor(window.innerWidth);
+                H = Math.floor(window.innerHeight);
+                CX = W / 2;
+                CY = H / 2;
+                worldX = Math.max(W, H) * 2;
+                canvas.style.width = W + 'px';
+                canvas.style.height = H + 'px';
+                canvas.width = Math.floor(W * DPR);
+                canvas.height = Math.floor(H * DPR);
+                ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+                if (stars.length === 0 && tunnelHexes.length === 0) initScene();
+            }
+            window.addEventListener('resize', resize, { passive: true });
+
+            function randRange(a, b) { return a + Math.random() * (b - a); }
+
+            function pickColor() {
+                const p = PALETTES[paletteIndex];
+                let h = randRange(p.hueMin, p.hueMax);
+                if (h >= 360) h -= 360;
+                return { h, s: p.sat };
+            }
+
+            function currentMode() { return MODES[modeIndex]; }
+
+            function makeStar(opts) {
+                const c = pickColor();
+                return Object.assign({
+                    hue: c.h,
+                    sat: c.s,
+                    tw: Math.random() * Math.PI * 2,
+                    psx: null,
+                    psy: null
+                }, opts);
+            }
+
+            function initStars() {
+                stars = [];
+                const m = currentMode().key;
+                if (m === 'distant') {
+                    for (let i = 0; i < DISTANT_COUNT; i++) {
+                        stars.push(makeStar({
+                            x: randRange(-W * 0.6, W * 0.6),
+                            y: randRange(-H * 0.6, H * 0.6),
+                            z: randRange(300, DEPTH),
+                            size: randRange(3, 8)
+                        }));
+                    }
+                } else {
+                    for (let i = 0; i < STAR_COUNT; i++) {
+                        const s = makeStar({
+                            z: Math.random() * DEPTH + 1,
+                            size: Math.random() * 1.6 + 0.2
+                        });
+                        if (m === 'pov') {
+                            s.x = randRange(-worldX, worldX);
+                            s.y = randRange(-H * 1.5, H * 1.5);
+                        } else {
+                            s.x = randRange(-W, W);
+                            s.y = randRange(-H, H);
+                        }
+                        stars.push(s);
+                    }
+                }
+            }
+
+            function resetStar(s) {
+                const m = currentMode().key;
+                if (m === 'pov') {
+                    s.x = worldX;
+                    s.y = randRange(-H * 1.5, H * 1.5);
+                    s.z = Math.random() * DEPTH + 1;
+                    s.size = Math.random() * 1.6 + 0.2;
+                } else if (m === 'distant') {
+                    s.x = randRange(-W * 0.6, W * 0.6);
+                    s.y = randRange(-H * 0.6, H * 0.6);
+                    s.z = randRange(300, DEPTH);
+                    s.size = randRange(3, 8);
+                } else {
+                    s.x = randRange(-W, W);
+                    s.y = randRange(-H, H);
+                    s.z = Math.random() * DEPTH + 1;
+                    s.size = Math.random() * 1.6 + 0.2;
+                }
+                const c = pickColor();
+                s.hue = c.h;
+                s.sat = c.s;
+                s.tw = Math.random() * Math.PI * 2;
+                s.psx = null;
+                s.psy = null;
+            }
+
+            // === TUNNEL MODE (cylindrical, single continuous surface) ===
+            //
+            // Each hex lives on the inside of a cylinder of radius TUNNEL_R.
+            // Parameterized by (z, angle). Camera at the center looks down +z.
+            // For a hex with center at (z, angle):
+            //   world position = (R*cos(angle), R*sin(angle), z)
+            //   screen position = (F*R*cos(angle) / z, F*R*sin(angle) / z)
+            // The 6 vertices are offset in (z, angle); each is projected separately,
+            // which naturally gives the cylindrical warp/stretch.
+
+            function initTunnel() {
+                stars = [];
+                tunnelHexes = [];
+                const angleStep = (2 * Math.PI) / TUNNEL_HEX_AROUND;
+
+                for (let row = 0; row < TUNNEL_HEX_ROWS; row++) {
+                    const z = row * TUNNEL_HEX_ROW_SPACING + 40;
+                    const angleOffset = (row % 2 === 1) ? angleStep * 0.5 : 0;
+                    for (let col = 0; col < TUNNEL_HEX_AROUND; col++) {
+                        const angle = col * angleStep + angleOffset;
+                        const c = pickColor();
+                        tunnelHexes.push({
+                            z,
+                            angle,
+                            cosA: Math.cos(angle),
+                            sinA: Math.sin(angle),
+                            hue: c.h,
+                            sat: c.s,
+                            tw: Math.random() * Math.PI * 2,
+                            psx: null,
+                            psy: null
+                        });
+                    }
+                }
+            }
+
+            function updateTunnel(dt, speedMul, modeDef) {
+                const speed = BASE_SPEED * speedMul * modeDef.speedMul;
+                for (let i = 0; i < tunnelHexes.length; i++) {
+                    const hex = tunnelHexes[i];
+                    hex.z -= speed * dt;
+                    if (hex.z <= 1) {
+                        hex.z += TUNNEL_WRAP;
+                        hex.psx = null;
+                        hex.psy = null;
+                    }
+                }
+            }
+
+            function drawTunnel(dt, offsetX, offsetY, boost) {
+                const r = TUNNEL_HEX_SIZE;
+                const cosDT = TUNNEL_COS_DT;
+                const sinDT = TUNNEL_SIN_DT;
+
+                for (let i = 0; i < tunnelHexes.length; i++) {
+                    const hex = tunnelHexes[i];
+                    const z = hex.z;
+
+                    // far cull: hex is too tiny to see
+                    if (z > TUNNEL_Z_CULL) continue;
+
+                    const cosA = hex.cosA;
+                    const sinA = hex.sinA;
+
+                    // center projection (used for streak + center dot)
+                    const k = FOCAL / z;
+                    const cx = TUNNEL_R * cosA;
+                    const cy = TUNNEL_R * sinA;
+                    const sx = CX + (cx + offsetX * (1 - z / DEPTH)) * k;
+                    const sy = CY + (cy + offsetY * (1 - z / DEPTH)) * k;
+                    const size = r * k; // approximate visual size
+
+                    // off-screen cull (with generous margin for the tangential extent)
+                    const margin = size * 3;
+                    if (sx + margin < 0 || sx - margin > W || sy + margin < 0 || sy - margin > H) continue;
+
+                    hex.tw += TWINKLE * dt;
+                    const alpha = 0.6 + Math.sin(hex.tw) * 0.4;
+
+                    // streak (warp from center outward, classic tunnel look)
+                    if (hex.psx !== null && boost > 0.04) {
+                        const dx = sx - hex.psx;
+                        const dy = sy - hex.psy;
+                        if (dx * dx + dy * dy > 1) {
+                            const grad = ctx.createLinearGradient(hex.psx, hex.psy, sx, sy);
+                            grad.addColorStop(0, `hsla(${hex.hue}, ${hex.sat}%, 75%, 0)`);
+                            grad.addColorStop(1, `hsla(${hex.hue}, ${hex.sat}%, 75%, ${0.7 * boost * alpha})`);
+                            ctx.strokeStyle = grad;
+                            ctx.lineWidth = Math.min(3, Math.max(0.4, size * 0.05 * boost));
+                            ctx.beginPath();
+                            ctx.moveTo(hex.psx, hex.psy);
+                            ctx.lineTo(sx, sy);
+                            ctx.stroke();
+                        }
+                    }
+
+                    // vertex cos/sin for the two side angles (cheap angle-add formulas)
+                    const cosA1 = cosA * cosDT - sinA * sinDT; // cos(angle + dTheta)
+                    const sinA1 = sinA * cosDT + cosA * sinDT; // sin(angle + dTheta)
+                    const cosA2 = cosA * cosDT + sinA * sinDT; // cos(angle - dTheta)
+                    const sinA2 = sinA * cosDT - cosA * sinDT; // sin(angle - dTheta)
+
+                    // project the 6 vertices in (z, angle) space:
+                    //   v0: (z - r,      angle)
+                    //   v1: (z - r/2,    angle + dTheta)
+                    //   v2: (z + r/2,    angle + dTheta)
+                    //   v3: (z + r,      angle)
+                    //   v4: (z + r/2,    angle - dTheta)
+                    //   v5: (z - r/2,    angle - dTheta)
+                    ctx.beginPath();
+
+                    let vz, vk, vx, vy, vpx, vpy;
+                    // v0
+                    vz = z - r; vk = FOCAL / vz;
+                    vx = TUNNEL_R * cosA; vy = TUNNEL_R * sinA;
+                    vpx = CX + (vx + offsetX * (1 - vz / DEPTH)) * vk;
+                    vpy = CY + (vy + offsetY * (1 - vz / DEPTH)) * vk;
+                    ctx.moveTo(vpx, vpy);
+                    // v1
+                    vz = z - r * 0.5; vk = FOCAL / vz;
+                    vx = TUNNEL_R * cosA1; vy = TUNNEL_R * sinA1;
+                    vpx = CX + (vx + offsetX * (1 - vz / DEPTH)) * vk;
+                    vpy = CY + (vy + offsetY * (1 - vz / DEPTH)) * vk;
+                    ctx.lineTo(vpx, vpy);
+                    // v2
+                    vz = z + r * 0.5; vk = FOCAL / vz;
+                    vx = TUNNEL_R * cosA1; vy = TUNNEL_R * sinA1;
+                    vpx = CX + (vx + offsetX * (1 - vz / DEPTH)) * vk;
+                    vpy = CY + (vy + offsetY * (1 - vz / DEPTH)) * vk;
+                    ctx.lineTo(vpx, vpy);
+                    // v3
+                    vz = z + r; vk = FOCAL / vz;
+                    vx = TUNNEL_R * cosA; vy = TUNNEL_R * sinA;
+                    vpx = CX + (vx + offsetX * (1 - vz / DEPTH)) * vk;
+                    vpy = CY + (vy + offsetY * (1 - vz / DEPTH)) * vk;
+                    ctx.lineTo(vpx, vpy);
+                    // v4
+                    vz = z + r * 0.5; vk = FOCAL / vz;
+                    vx = TUNNEL_R * cosA2; vy = TUNNEL_R * sinA2;
+                    vpx = CX + (vx + offsetX * (1 - vz / DEPTH)) * vk;
+                    vpy = CY + (vy + offsetY * (1 - vz / DEPTH)) * vk;
+                    ctx.lineTo(vpx, vpy);
+                    // v5
+                    vz = z - r * 0.5; vk = FOCAL / vz;
+                    vx = TUNNEL_R * cosA2; vy = TUNNEL_R * sinA2;
+                    vpx = CX + (vx + offsetX * (1 - vz / DEPTH)) * vk;
+                    vpy = CY + (vy + offsetY * (1 - vz / DEPTH)) * vk;
+                    ctx.lineTo(vpx, vpy);
+                    ctx.closePath();
+
+                    // dim fill
+                    ctx.fillStyle = `hsla(${hex.hue}, ${hex.sat}%, 50%, ${alpha * 0.18})`;
+                    ctx.fill();
+
+                    // bright outline
+                    ctx.strokeStyle = `hsla(${hex.hue}, ${hex.sat}%, 75%, ${alpha * 0.9})`;
+                    ctx.lineWidth = Math.max(0.5, size * 0.04);
+                    ctx.stroke();
+
+                    // center dot
+                    const dotR = Math.max(0.5, size * 0.08);
+                    ctx.fillStyle = `hsla(${hex.hue}, ${hex.sat}%, 90%, ${alpha})`;
+                    ctx.fillRect(sx - dotR * 0.5, sy - dotR * 0.5, dotR, dotR);
+
+                    hex.psx = sx;
+                    hex.psy = sy;
+                }
+            }
+
+            // === UNIFIED ===
+
+            function initScene() {
+                if (currentMode().key === 'tunnel') {
+                    initTunnel();
+                } else {
+                    initStars();
+                }
+            }
+
+            function recolorAll() {
+                if (currentMode().key === 'tunnel') {
+                    for (const hex of tunnelHexes) {
+                        const c = pickColor();
+                        hex.hue = c.h;
+                        hex.sat = c.s;
+                    }
+                } else {
+                    for (const s of stars) {
+                        const c = pickColor();
+                        s.hue = c.h;
+                        s.sat = c.s;
+                    }
+                }
+            }
+
+            function flashChip(el) {
+                el.classList.remove('flash');
+                void el.offsetWidth;
+                el.classList.add('flash');
+            }
+
+            function nextPalette() {
+                paletteIndex = (paletteIndex + 1) % PALETTES.length;
+                paletteNameEl.textContent = PALETTES[paletteIndex].name;
+                flashChip(paletteNameEl);
+                recolorAll();
+            }
+
+            function nextMode() {
+                modeIndex = (modeIndex + 1) % MODES.length;
+                modeNameEl.textContent = MODES[modeIndex].label;
+                flashChip(modeNameEl);
+                initScene();
+            }
+
+            // Pointer move for parallax
+            function onPointerMove(e) {
+                const rect = canvas.getBoundingClientRect();
+                pointer.tx = ((e.clientX - rect.left) - CX) / CX;
+                pointer.ty = ((e.clientY - rect.top) - CY) / CY;
+            }
+            window.addEventListener('pointermove', onPointerMove, { passive: true });
+            window.addEventListener('touchmove', (e) => {
+                if (e.touches && e.touches[0]) onPointerMove(e.touches[0]);
+            }, { passive: true });
+
+            // Boost on hold
+            function setBoost(on) {
+                boostTarget = on ? 1 : 0;
+                boostEl.classList.toggle('on', on);
+            }
+            window.addEventListener('pointerdown', (e) => {
+                if (e.target && e.target.closest && e.target.closest('.corner, .hint, .boost')) return;
+                setBoost(true);
+            });
+            window.addEventListener('pointerup', () => setBoost(false));
+            window.addEventListener('pointercancel', () => setBoost(false));
+            window.addEventListener('blur', () => setBoost(false));
+
+            window.addEventListener('keydown', (e) => {
+                if (e.code === 'Space' && !e.repeat) {
+                    e.preventDefault();
+                    setBoost(true);
+                } else if (e.key === 'Enter') {
+                    e.preventDefault();
+                    nextPalette();
+                } else if (e.key === 'm' || e.key === 'M') {
+                    e.preventDefault();
+                    nextMode();
+                }
+            });
+            window.addEventListener('keyup', (e) => {
+                if (e.code === 'Space') setBoost(false);
+            });
+
+            // === STAR DRAW (forward / pov / distant) ===
+
+            function drawStars(dt, speedMul, modeDef, offsetX, offsetY, boost) {
+                const isPov = modeDef.motion === 'x';
+                for (let i = 0; i < stars.length; i++) {
+                    const s = stars[i];
+                    const speed = BASE_SPEED * (1 + (1 - s.z / DEPTH) * 2) * speedMul * modeDef.speedMul;
+
+                    if (isPov) {
+                        s.x -= speed * dt;
+                        if (s.x < -worldX) resetStar(s);
+                    } else {
+                        s.z -= speed * dt;
+                        if (s.z <= 1) resetStar(s);
+                    }
+
+                    const k = FOCAL / s.z;
+                    let sx, sy;
+                    if (isPov) {
+                        sx = CX + s.x * k + offsetX * 0.15;
+                        sy = CY + (s.y + offsetY * (1 - s.z / DEPTH)) * k;
+                    } else {
+                        sx = CX + (s.x + offsetX * (1 - s.z / DEPTH)) * k;
+                        sy = CY + (s.y + offsetY * (1 - s.z / DEPTH)) * k;
+                    }
+
+                    s.tw += TWINKLE * dt;
+                    const alpha = 0.6 + Math.sin(s.tw) * 0.4;
+                    const r = s.size * (1 + (1 - s.z / DEPTH) * 2) * (1 + boost * 0.6);
+
+                    // streak
+                    if (s.psx !== null && boost > 0.04) {
+                        const dx = sx - s.psx;
+                        const dy = sy - s.psy;
+                        if (dx * dx + dy * dy > 1) {
+                            const grad = ctx.createLinearGradient(s.psx, s.psy, sx, sy);
+                            grad.addColorStop(0, `hsla(${s.hue}, ${s.sat}%, 80%, 0)`);
+                            grad.addColorStop(1, `hsla(${s.hue}, ${s.sat}%, 80%, ${0.85 * boost * alpha})`);
+                            ctx.strokeStyle = grad;
+                            ctx.lineWidth = Math.min(4, Math.max(0.4, r * 0.5 * (0.4 + boost * 0.6)));
+                            ctx.beginPath();
+                            ctx.moveTo(s.psx, s.psy);
+                            ctx.lineTo(sx, sy);
+                            ctx.stroke();
+                        }
+                    }
+
+                    // glow
+                    const grad = ctx.createRadialGradient(sx, sy, 0, sx, sy, r * 3);
+                    grad.addColorStop(0, `hsla(${s.hue}, ${s.sat}%, 80%, ${alpha})`);
+                    grad.addColorStop(0.3, `hsla(${s.hue}, ${s.sat}%, 60%, ${alpha * 0.6})`);
+                    grad.addColorStop(1, `rgba(0,0,0,0)`);
+                    ctx.fillStyle = grad;
+                    ctx.fillRect(sx - r * 3, sy - r * 3, r * 6, r * 6);
+
+                    // bright core
+                    ctx.fillStyle = `rgba(255,255,255,${0.6 * alpha})`;
+                    ctx.fillRect(sx - r * 0.5, sy - r * 0.5, r, r);
+
+                    s.psx = sx;
+                    s.psy = sy;
+                }
+            }
+
+            // === MAIN LOOP ===
+            let last = performance.now();
+            function loop(now) {
+                const dt = Math.min(40, now - last) / 16.666;
+                last = now;
+
+                pointer.x += (pointer.tx - pointer.x) * 0.08 * dt;
+                pointer.y += (pointer.ty - pointer.y) * 0.08 * dt;
+
+                boost += (boostTarget - boost) * BOOST_FADE * dt;
+                const modeDef = currentMode();
+                const speedMul = 1 + boost * (modeDef.boostMax - 1);
+
+                const trail = TRAIL_ALPHA + boost * 0.12;
+                ctx.fillStyle = `rgba(0,0,0,${trail})`;
+                ctx.fillRect(0, 0, W, H);
+
+                const isTunnel = modeDef.motion === 'tunnel';
+                const isPov = modeDef.motion === 'x';
+                const offsetX = isTunnel ? pointer.x * 80 : (isPov ? pointer.x * 24 : pointer.x * 120);
+                const offsetY = pointer.y * 80;
+
+                if (isTunnel) {
+                    updateTunnel(dt, speedMul, modeDef);
+                    drawTunnel(dt, offsetX, offsetY, boost);
+                } else {
+                    drawStars(dt, speedMul, modeDef, offsetX, offsetY, boost);
+                }
+
+                requestAnimationFrame(loop);
+            }
+
+            // Initialize and start
+            resize();
+            initScene();
+            requestAnimationFrame(loop);
+        })();
+    </script>
+</body>
+</html>
