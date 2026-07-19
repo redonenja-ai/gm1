@@ -1,0 +1,381 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NEON BUILDER RUNNER ∞</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background: #000;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            font-family: monospace;
+        }
+        canvas { 
+            display: block; 
+            box-shadow: 0 0 40px rgba(0, 255, 200, 0.4); 
+        }
+        #ui {
+            position: absolute; top: 15px; left: 20px; color: #0ff; 
+            font-size: 26px; text-shadow: 0 0 12px #0ff; pointer-events: none; z-index: 10;
+        }
+        #instructions {
+            position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%);
+            color: #555; font-size: 14px; text-align: center;
+        }
+        #gameOverScreen {
+            position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+            text-align: center; color: white; display: none; z-index: 100;
+        }
+        button {
+            margin-top: 20px;
+            padding: 12px 30px;
+            font-size: 22px;
+            background: #0ff;
+            color: black;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-family: monospace;
+        }
+        button:hover { background: #0cc; }
+        .crosshair {
+            position: absolute; width: 22px; height: 22px; border: 2px solid rgba(0,255,255,0.7);
+            border-radius: 50%; pointer-events: none; display: none; z-index: 20;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="ui">SCORE: <span id="score">0</span><br>BUILD: <span id="build">60</span></div>
+    <div id="instructions">
+        SPACE / TAP = Jump  LEFT CLICK = Shoot  RIGHT CLICK = Build<br>
+        <label><input type="checkbox" id="autoTerrain" checked> Auto Terrain Change</label>
+    </div>
+
+    <canvas id="gameCanvas"></canvas>
+    <div class="crosshair" id="crosshair"></div>
+
+    <!-- Game Over Screen -->
+    <div id="gameOverScreen">
+        <h1 style="color:#f00; margin:0;">GAME OVER</h1>
+        <p style="font-size:28px; margin:10px;">SCORE: <span id="finalScore">0</span></p>
+        <button onclick="restartGame()">RESTART</button>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const scoreEl = document.getElementById('score');
+        const buildEl = document.getElementById('build');
+        const crosshair = document.getElementById('crosshair');
+        const gameOverScreen = document.getElementById('gameOverScreen');
+        const finalScoreEl = document.getElementById('finalScore');
+        const autoTerrainCheck = document.getElementById('autoTerrain');
+
+        function resize() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+        }
+        window.addEventListener('resize', resize);
+        resize();
+
+        let scrollX = 0, score = 0, buildResource = 60, gameOver = false, speed = 4.2;
+        let groundPoints = [], enemies = [], projectiles = [], particles = [], bgBlocks = [];
+        let autoTerrain = true;
+
+        const player = { x: canvas.width / 4, y: 0, vy: 0, onGround: false, legAngle: 0 };
+
+        function initGround() {
+            groundPoints = [];
+            let y = canvas.height * 0.55;
+            for (let x = -300; x < canvas.width * 3; x += 14) {
+                y += (Math.random() - 0.5) * 4; // Gentler start
+                y = Math.max(canvas.height * 0.38, Math.min(canvas.height * 0.72, y));
+                groundPoints.push({x: x, y: y});
+            }
+        }
+
+        function getGroundY(worldX) {
+            if (groundPoints.length < 2) return canvas.height * 0.6;
+            const firstX = groundPoints[0].x;
+            let idx = Math.floor((worldX - firstX) / 14);
+            if (idx < 0) idx = 0;
+            if (idx >= groundPoints.length - 1) idx = groundPoints.length - 2;
+            const p1 = groundPoints[idx];
+            const p2 = groundPoints[idx + 1];
+            const t = Math.max(0, Math.min(1, (worldX - p1.x) / 14));
+            return p1.y + (p2.y - p1.y) * t;
+        }
+
+        function createExplosion(x, y, color = '#ff0088', amount = 18) {
+            for (let i = 0; i < amount; i++) {
+                particles.push({
+                    x, y,
+                    vx: (Math.random()-0.5)*9,
+                    vy: (Math.random()-0.5)*9 - 2,
+                    life: 32,
+                    size: Math.random()*5 + 3,
+                    color
+                });
+            }
+        }
+
+        function spawnEnemy() {
+            if (Math.random() < 0.017) {
+                enemies.push({ x: scrollX + canvas.width + 100, y: 0, health: 2 });
+            }
+        }
+
+        function shoot(mx, my) {
+            // mx, my are screen coordinates (clientX, clientY)
+            const dx = mx - player.x;
+            const dy = my - (player.y - 12);
+            const dist = Math.hypot(dx, dy) || 1;
+            projectiles.push({
+                x: scrollX + player.x + 18, y: player.y - 12,
+                vx: dx / dist * 19, vy: dy / dist * 19, life: 55
+            });
+            createExplosion(scrollX + player.x + 20, player.y - 12, '#00ffff', 7);
+        }
+
+        function buildTerrain(screenX) {
+            if (buildResource < 6) return;
+            buildResource -= 6;
+            buildEl.textContent = Math.floor(buildResource);
+
+            const worldX = screenX + scrollX;
+            for (let p of groundPoints) {
+                const dx = p.x - worldX;
+                if (Math.abs(dx) < 55) p.y -= (55 - Math.abs(dx)) * 0.75;
+            }
+            createExplosion(worldX, getGroundY(worldX), '#00ffaa', 14);
+        }
+
+        function update() {
+            if (gameOver) return;
+
+            scrollX += speed;
+            score += speed * 0.65;
+            scoreEl.textContent = Math.floor(score);
+
+            // Endless Ground
+            while (groundPoints[0].x < scrollX - canvas.width * 1.5) groundPoints.shift();
+            while (groundPoints[groundPoints.length-1].x < scrollX + canvas.width * 2.8) {
+                const last = groundPoints[groundPoints.length-1];
+                let ny = last.y + (Math.random() - 0.5) * (autoTerrain ? 7 : 4.5);
+                ny = Math.max(canvas.height*0.32, Math.min(canvas.height*0.78, ny));
+                groundPoints.push({x: last.x + 14, y: ny});
+            }
+
+            // Player Physics
+            player.vy += 0.68;
+            player.y += player.vy;
+            const groundY = getGroundY(scrollX + player.x);
+            if (player.y + 14 >= groundY) {
+                player.y = groundY - 14;
+                player.vy = 0;
+                player.onGround = true;
+            } else player.onGround = false;
+
+            if (player.y > canvas.height + 100) endGame();
+
+            if (player.onGround) player.legAngle += 0.28;
+
+            // Spawns
+            spawnEnemy();
+            if (Math.random() < 0.028) bgBlocks.push({x: scrollX + canvas.width + 50, y: Math.random()*canvas.height*0.7});
+
+            // Update projectiles, enemies, particles, bgBlocks (same as before)
+            for (let i = projectiles.length-1; i >= 0; i--) {
+                const p = projectiles[i];
+                p.x += p.vx; p.y += p.vy; p.life--;
+                if (p.life <= 0) projectiles.splice(i,1);
+            }
+
+            for (let i = enemies.length-1; i >= 0; i--) {
+                const e = enemies[i];
+                e.x -= speed * 1.15;
+                e.y = getGroundY(e.x) - 14;
+
+                // Both in world coords for collision
+                const playerWorldX = scrollX + player.x;
+                if (Math.hypot(e.x - playerWorldX, e.y - player.y) < 26) endGame();
+
+                for (let j = projectiles.length-1; j >= 0; j--) {
+                    const p = projectiles[j];
+                    // Both projectile and enemy use world coords
+                    if (Math.hypot(p.x - e.x, p.y - e.y) < 24) {
+                        e.health--;
+                        projectiles.splice(j,1);
+                        createExplosion(e.x, e.y);
+                        if (e.health <= 0) {
+                            createExplosion(e.x, e.y, '#ff4400', 28);
+                            enemies.splice(i,1);
+                            score += 100;
+                        }
+                        break;
+                    }
+                }
+                if (e.x < scrollX - 100) enemies.splice(i,1);
+            }
+
+            for (let i = particles.length-1; i >= 0; i--) {
+                const pt = particles[i];
+                pt.x += pt.vx; pt.y += pt.vy; pt.vy += 0.35;
+                pt.life--; pt.size *= 0.95;
+                if (pt.life <= 0) particles.splice(i,1);
+            }
+
+            for (let i = bgBlocks.length-1; i >= 0; i--) {
+                bgBlocks[i].x -= speed * 0.65;
+                if (bgBlocks[i].x < scrollX - 200) bgBlocks.splice(i,1);
+            }
+
+            if (Math.random() < 0.13) buildResource = Math.min(100, buildResource + 0.45);
+            buildEl.textContent = Math.floor(buildResource);
+
+            // Gradually increase difficulty
+            if (score > 800 && speed < 7.5) speed += 0.0008;
+        }
+
+        function draw() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // Background blocks
+            ctx.shadowBlur = 15;
+            bgBlocks.forEach(b => {
+                const bsx = b.x - scrollX;
+                if (bsx < -50 || bsx > canvas.width + 50) return;
+                ctx.fillStyle = '#0f8';
+                ctx.shadowColor = '#0ff';
+                ctx.fillRect(bsx, b.y, 18, 32);
+            });
+
+            // Particles
+            particles.forEach(p => {
+                ctx.globalAlpha = p.life / 32;
+                ctx.fillStyle = p.color;
+                ctx.shadowColor = p.color;
+                ctx.shadowBlur = 12;
+                ctx.fillRect(p.x - scrollX - p.size/2, p.y - p.size/2, p.size, p.size);
+            });
+            ctx.globalAlpha = 1;
+
+            // Ground
+            ctx.shadowBlur = 28;
+            ctx.shadowColor = '#0f0';
+            ctx.strokeStyle = '#0f0';
+            ctx.lineWidth = 6;
+            ctx.beginPath();
+            // Find first visible ground point
+            let start = 0;
+            for (let i = 0; i < groundPoints.length; i++) {
+                if (groundPoints[i].x - scrollX >= -50) { start = Math.max(0, i - 1); break; }
+            }
+            ctx.moveTo(groundPoints[start].x - scrollX, groundPoints[start].y);
+            for (let i = start + 1; i < groundPoints.length; i++) {
+                const sx = groundPoints[i].x - scrollX;
+                if (sx > canvas.width + 50) break;
+                ctx.lineTo(sx, groundPoints[i].y);
+            }
+            ctx.stroke();
+
+            // Projectiles + Player + Enemies (same as previous version)
+            ctx.shadowBlur = 22; ctx.shadowColor = '#0ff';
+            projectiles.forEach(p => {
+                ctx.fillStyle = '#0ff';
+                ctx.beginPath();
+                ctx.arc(p.x - scrollX, p.y, 7, 0, Math.PI*2);
+                ctx.fill();
+            });
+
+            ctx.shadowColor = '#f0f';
+            enemies.forEach(e => {
+                const ex = e.x - scrollX;
+                if (ex < -50 || ex > canvas.width + 50) return;
+                ctx.strokeStyle = '#f08'; ctx.lineWidth = 4;
+                // Head
+                ctx.beginPath(); ctx.arc(ex, e.y-12, 9, 0, Math.PI*2); ctx.stroke();
+                // Body
+                ctx.beginPath(); ctx.moveTo(ex, e.y-6); ctx.lineTo(ex, e.y+13); ctx.stroke();
+                // Arms
+                ctx.beginPath(); ctx.moveTo(ex-10, e.y); ctx.lineTo(ex+10, e.y); ctx.stroke();
+                // Legs
+                ctx.beginPath();
+                ctx.moveTo(ex, e.y+13); ctx.lineTo(ex-8, e.y+25);
+                ctx.moveTo(ex, e.y+13); ctx.lineTo(ex+8, e.y+25);
+                ctx.stroke();
+            });
+
+            // Player
+            ctx.shadowBlur = 35; ctx.shadowColor = '#0ff'; ctx.strokeStyle = '#aff'; ctx.lineWidth = 4;
+            const px = player.x, py = player.y;
+            ctx.beginPath(); ctx.arc(px, py-17, 9, 0, Math.PI*2); ctx.stroke();
+            ctx.beginPath(); ctx.moveTo(px, py-8); ctx.lineTo(px, py+12); ctx.stroke();
+            ctx.beginPath(); ctx.moveTo(px-10, py-3); ctx.lineTo(px+14, py+5); ctx.stroke();
+            const swing = player.onGround ? Math.sin(player.legAngle)*10 : 7;
+            ctx.beginPath();
+            ctx.moveTo(px, py+12); ctx.lineTo(px-8+swing, py+26);
+            ctx.moveTo(px, py+12); ctx.lineTo(px+8-swing, py+26);
+            ctx.stroke();
+
+            ctx.strokeStyle = '#ff0'; ctx.lineWidth = 5;
+            ctx.beginPath(); ctx.moveTo(px+13, py-4); ctx.lineTo(px+27, py-9); ctx.stroke();
+        }
+
+        function endGame() {
+            gameOver = true;
+            finalScoreEl.textContent = Math.floor(score);
+            gameOverScreen.style.display = 'block';
+        }
+
+        window.restartGame = function() {
+            // Reset everything
+            scrollX = 0; score = 0; speed = 4.2; buildResource = 60;
+            gameOver = false;
+            enemies = []; projectiles = []; particles = []; bgBlocks = [];
+            gameOverScreen.style.display = 'none';
+            scoreEl.textContent = '0';
+            buildEl.textContent = '60';
+            initGround();
+            player.y = getGroundY(player.x) - 14;
+            player.vy = 0;
+        };
+
+        // Controls
+        // Shoot: pass screen coordinates so shoot() calculates direction correctly
+        canvas.addEventListener('click', e => { if (!gameOver) shoot(e.clientX, e.clientY); });
+        canvas.addEventListener('contextmenu', e => {
+            e.preventDefault();
+            if (!gameOver) buildTerrain(e.clientX);
+        });
+
+        document.addEventListener('keydown', e => {
+            if (gameOver) return;
+            if (e.code === 'Space' && player.onGround) {
+                player.vy = -14;
+                player.onGround = false;
+            }
+        });
+
+        autoTerrainCheck.addEventListener('change', () => {
+            autoTerrain = autoTerrainCheck.checked;
+        });
+
+        // Start
+        initGround();
+        player.y = getGroundY(player.x) - 14;
+        crosshair.style.display = 'block';
+        requestAnimationFrame(function loop() {
+            update();
+            draw();
+            requestAnimationFrame(loop);
+        });
+    </script>
+</body>
+</html>
