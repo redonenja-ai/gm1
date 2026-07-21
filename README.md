@@ -21,6 +21,10 @@ starfield (4).html
 
 stick2b2.html
 
+shooter-better2.html
+
+<img width="1445" height="848" alt="Screenshot from 2026-07-21 14-27-46" src="https://github.com/user-attachments/assets/e55d513b-7a0d-4ea8-9fdc-9d0bec92c400" />
+
 
 <img width="866" height="640" alt="pbrick" src="https://github.com/user-attachments/assets/480066ba-b335-4694-ab46-e9a5df7dae38" />
 
