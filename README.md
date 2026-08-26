@@ -23,6 +23,16 @@ stick2b2.html
 
 shooter-better2.html
 
+tailgunner
+
+slitherworm
+
+cayonland 
+<img width="1197" height="893" alt="tail6" src="https://github.com/user-attachments/assets/06b72783-91f3-4062-be7d-09c8e7eb0508" />
+<img width="1906" height="894" alt="worm3" src="https://github.com/user-attachments/assets/fec8d928-d6e4-465f-b4aa-bbd09a06883f" />
+<img width="1415" height="882" alt="cayon17" src="https://github.com/user-attachments/assets/1c9a3191-aca2-4750-aba5-b2915d70d7f0" />
+
+
 <img width="1445" height="848" alt="Screenshot from 2026-07-21 14-27-46" src="https://github.com/user-attachments/assets/e55d513b-7a0d-4ea8-9fdc-9d0bec92c400" />
 
 
