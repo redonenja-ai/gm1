@@ -12,6 +12,9 @@ redonenja@gmail.com bitcoin-bc1qcg28ce2pst8yzw9ryw65vje7gs5ew7dcwel943
 free versions games -demo -
 store and donations- ko-fi.com/dwaynedevou
 
+10 games deluxe file -4. 99 
+https://ko-fi.com/s/a0df28e952
+
 brickbreaker (good).html
 
 match3_v3(good).html
