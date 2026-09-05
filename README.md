@@ -9,7 +9,8 @@ paid version with donation more features - just email me and donate to R&D
 
 redonenja@gmail.com bitcoin-bc1qcg28ce2pst8yzw9ryw65vje7gs5ew7dcwel943
 
-free versions games
+free versions games -demo -
+store and donations- ko-fi.com/dwaynedevou
 
 brickbreaker (good).html
 
@@ -51,4 +52,3 @@ cayonland
 
 <img width="1756" height="905" alt="stick2b" src="https://github.com/user-attachments/assets/341fd24c-5ecd-4904-9550-2e2429eccb38" />
 
-store and donations- ko-fi.com/dwaynedevou
