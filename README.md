@@ -51,5 +51,4 @@ cayonland
 
 <img width="1756" height="905" alt="stick2b" src="https://github.com/user-attachments/assets/341fd24c-5ecd-4904-9550-2e2429eccb38" />
 
-
-
+store and donations- ko-fi.com/dwaynedevou
